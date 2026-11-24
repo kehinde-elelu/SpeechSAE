@@ -59,10 +59,16 @@ The decoder reconstructs hidden activations, not audio. This HuBERT SAE is not t
 
 ## Hosting
 
-`app.py` provides a Gradio-compatible Space entry point and proxies the custom website to its local analysis backend. `requirements.txt` and `packages.txt` supply Python and audio-decoding dependencies. The existing public Space is [Kelelu/SpeechSAE](https://huggingface.co/spaces/Kelelu/SpeechSAE).
+`app.py` provides a single-server ASGI entry point for local or general hosting. `deployment/huggingface/` contains the Space-specific launcher and configuration. `requirements.txt` and `packages.txt` supply Python and audio-decoding dependencies. The existing public Space is [Kelelu/SpeechSAE](https://huggingface.co/spaces/Kelelu/SpeechSAE).
 
-GitHub Pages alone cannot execute the Python speech models. Free Space resources may sleep and must warm up after restart. Model caches, checkpoints, full corpus data, private recordings, logs, and server PID files are excluded from this repository.
+GitHub Pages alone cannot execute the Python speech models. The available Space hardware is free ZeroGPU. The main website uses CPU inference; the native interface registers an optional GPU inspection API. Free resources may sleep and must warm up after restart. Model caches, checkpoints, full corpus data, private recordings, logs, and server PID files are excluded from this repository.
 
 ## Attribution
 
 The SAE implementation and interpretation helpers in `vendor/audio_sae` are adapted from [AudioSAE](https://github.com/audiosae/audio-sae) under its MIT license; see `vendor/LICENSE`. The educational notebook adapts the upstream interpretation workflow. Website layout inspiration comes from Ayush Gharat's Latent Scope; the speech implementation and evidence are specific to this project. Backbone and SAE weights retain their respective model licenses.
+
+### Update the Hugging Face Space
+
+Upload the four files from `deployment/huggingface/` to the root of the Space repository. The launcher downloads a pinned source commit from this GitHub repository. To deploy a new source release, update `REVISION` in the Space launcher deliberately.
+
+The launcher uses Gradio's native startup with server-side rendering disabled and mounts the website routes on the returned server app. This preserves the ZeroGPU lifecycle and the custom HTML frontend. No paid hardware or private cerberus endpoint is required.
