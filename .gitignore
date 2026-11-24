@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+env/
+.env
+*.log
+*.pid
+hf_cache/
+.cache/
+*.pt
+*.npz
+Data/
+audio_recordbyme/
+.ipynb_checkpoints/
+*before_*.ipynb
