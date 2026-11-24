@@ -6,13 +6,12 @@ os.environ.setdefault('SAE_DEVICE','cpu')
 sys.path.insert(0,str(ROOT/'Demo_Code'))
 import server
 import gradio as gr
-import httpx
+import json
 from fastapi import FastAPI,Request
 from fastapi.responses import Response
 import uvicorn
 
 threading.Thread(target=server.load,daemon=True).start()
-threading.Thread(target=server.ThreadingHTTPServer(('127.0.0.1',7865),server.Handler).serve_forever,daemon=True).start()
 
 def inspect_file(path):
  if server.MODEL is None:raise gr.Error('Models are warming up. Please try again shortly.')
@@ -27,13 +26,44 @@ app=gr.mount_gradio_app(FastAPI(),studio,path='/gradio')
 
 @app.api_route('/{path:path}',methods=['GET','POST'])
 async def proxy(path:str,request:Request):
+ from starlette.concurrency import run_in_threadpool
+ if request.method=='GET':
+  if path=='api/health':return {'ready':server.MODEL is not None,'error':server.ERROR}
+  if path=='api/examples':
+   bundled=ROOT/'data/examples.json';available=json.loads(bundled.read_text()) if bundled.is_file() else {}
+   return [{'id':k,'label':v[0]} for k,v in server.EXAMPLES.items() if v[1].is_file() or k in available]
+  files={'':'index.html','results':'index.html','style.css':'style.css','app.js':'app.js'}
+  if path not in files:return Response('Not found',status_code=404)
+  name=files[path];mime='text/html' if name.endswith('html') else ('text/css' if name.endswith('css') else 'text/javascript')
+  return Response((ROOT/'Demo_Code/static'/name).read_bytes(),media_type=mime)
+ if path not in ['api/analyze','api/example','api/words/compare']:return Response('Not found',status_code=404)
+ if server.MODEL is None:return Response(json.dumps({'error':server.ERROR or 'Models are warming up. Please try again shortly.'}),status_code=503,media_type='application/json')
  body=bytearray()
  async for chunk in request.stream():
   body.extend(chunk)
   if len(body)>20*1024*1024:return Response('Upload limit is 20 MB.',status_code=413)
- headers={k:v for k,v in request.headers.items() if k.lower() not in ['content-length','connection','transfer-encoding','accept-encoding']}
- async with httpx.AsyncClient(timeout=300) as client:
-  r=await client.request(request.method,'http://127.0.0.1:7865/'+path,params=request.query_params,content=bytes(body),headers=headers)
- return Response(r.content,status_code=r.status_code,headers={'Content-Type':r.headers.get('content-type','application/json'),'Cache-Control':'no-store'})
+ if not body:return Response(json.dumps({'error':'Choose an audio file or comparison.'}),status_code=400,media_type='application/json')
+ if not server.LOCK.acquire(blocking=False):return Response(json.dumps({'error':'Another recording is being analyzed. Please try again shortly.'}),status_code=429,media_type='application/json')
+ def work():
+  try:
+   if path=='api/analyze':
+    if request.headers.get('content-type','').split(';')[0]!='application/octet-stream':raise ValueError('Send an audio file as binary data.')
+    return server.analyze(bytes(body),'Uploaded recording')
+   payload=json.loads(body)
+   if path=='api/words/compare':
+    from words import compare
+    return compare(payload,ROOT,server.MODEL)
+   key=payload.get('id');bundled=ROOT/'data/examples.json';examples=json.loads(bundled.read_text()) if bundled.is_file() else {}
+   if key in examples:return examples[key]
+   if key in server.EXAMPLES and server.EXAMPLES[key][1].is_file():return server.analyze(server.EXAMPLES[key][1].read_bytes(),server.EXAMPLES[key][1].name)
+   raise ValueError('Example unavailable. Upload your own recording.')
+  finally:server.LOCK.release()
+ try:
+  result=await run_in_threadpool(work)
+  return Response(json.dumps(result,allow_nan=False),media_type='application/json',headers={'Cache-Control':'no-store'})
+ except ValueError as e:return Response(json.dumps({'error':str(e)}),status_code=400,media_type='application/json')
+ except Exception:
+  import traceback;traceback.print_exc()
+  return Response(json.dumps({'error':'Analysis failed. Please try another recording.'}),status_code=500,media_type='application/json')
 
 if __name__=='__main__':uvicorn.run(app,host='0.0.0.0',port=int(os.environ.get('PORT','7860')))
