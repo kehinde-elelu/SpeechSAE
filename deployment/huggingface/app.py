@@ -1,7 +1,7 @@
 # Load the reviewed, pinned GitHub release and run its Gradio-compatible app.
 from pathlib import Path
 import io, os, runpy, sys, urllib.request, zipfile
-REVISION = "2d4ac82344d90e74b9c0afd9c3eeab4309622bc9"
+REVISION = "543fb4c2e43f84b2a0ec18d5e65accdb79fa8539"
 ROOT = Path("/tmp/speechsae-release")
 ROOT.mkdir(exist_ok=True)
 url = f"https://github.com/kehinde-elelu/SpeechSAE/archive/{REVISION}.zip"
